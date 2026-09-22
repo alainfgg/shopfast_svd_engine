@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  training-service:
+    build: ./training-service
+    container_name: shopfast-training
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./dataset:/app/dataset
+      - model_storage:/app/models
+    environment:
+      - FLASK_APP=train.py
+
+  inference-service:
+    build: ./inference-service
+    container_name: shopfast-inference
+    ports:
+      - "5002:5002"
+    volumes:
+      - model_storage:/app/models
+    environment:
+      - FLASK_APP=app.py
+    depends_on:
+      - training-service
+
+volumes:
+  model_storage:
