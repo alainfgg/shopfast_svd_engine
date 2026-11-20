@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>ShopFast AI — Arquitectura 100% Serverless (AWS)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    .wrap { max-width: 1050px; margin: auto; }
+    .top { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 14px; }
+    .tag { background: #10b981; color: #022c22; padding: 5px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+    .bar { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+    input, select, button { padding: 10px 14px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 14px; }
+    input.url { flex: 1; min-width: 320px; border-color: #38bdf8; }
+    button { background: #2563eb; border: none; font-weight: 600; cursor: pointer; }
+    button.evt { background: #7c3aed; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 18px 0; }
+    .card { background: #1e293b; padding: 16px; border-radius: 10px; border: 1px solid #334155; }
+    .card small { color: #94a3b8; display: block; margin-bottom: 6px; }
+    .card strong { font-size: 22px; color: #38bdf8; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 10px; overflow: hidden; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; font-size: 14px; }
+    th { background: #020617; color: #94a3b8; }
+    pre { background: #020617; padding: 14px; border-radius: 8px; overflow-x: auto; font-size: 12px; color: #a7f3d0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h2 style="margin:0;">ShopFast — Recomendador IA Serverless (Lambda + S3 + SageMaker)</h2>
+        <small style="color:#94a3b8;">Cero servidores EC2 | SLA Latencia &lt; 200 ms | Meta Conversión: 1.5% → 3.5%</small>
+      </div>
+      <span class="tag">AWS Serverless Live</span>
+    </div>
+
+    <div class="bar">
+      <input id="apiUrl" class="url" placeholder="Pega aquí tu URL de API Gateway (ej: https://xxxx.execute-api.us-east-1.amazonaws.com)" />
+      <button onclick="saveUrl()">Guardar Endpoint</button>
+    </div>
+
+    <div class="bar">
+      <select onchange="document.getElementById('uid').value=this.value">
+        <option value="1515915625519334445">Usuario con Historial (SVD RAM)</option>
+        <option value="usuario_nuevo_999">Usuario Nuevo (Cold Start Fallback)</option>
+        <option value="">Home General (Sin Usuario)</option>
+      </select>
+      <input id="uid" value="1515915625519334445" placeholder="user_id (HMAC-SHA256)" />
+      <button onclick="consultar()">Consultar API</button>
+      <button class="evt" onclick="enviarEvento()">Simular Clickstream (POST /track-interaction)</button>
+    </div>
+
+    <div class="kpis">
+      <div class="card"><small>Latencia API Gateway + Lambda</small><strong id="lat">-- ms</strong></div>
+      <div class="card"><small>Estrategia Activa</small><strong id="src">--</strong></div>
+      <div class="card"><small>Ítems Recomendados</small><strong id="cnt">--</strong></div>
+      <div class="card"><small>Impacto Negocio</small><strong>3.5% Conv. (+133%)</strong></div>
+    </div>
+
+    <table>
+      <thead><tr><th>#</th><th>Product ID</th><th>Categoría</th><th>Marca</th><th>Precio</th><th>Score SVD</th><th>Origen</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+
+    <h4>Contrato JSON Crudo (Evidencia API REST)</h4>
+    <pre id="out">Configura la URL de API Gateway y presiona Consultar API...</pre>
+  </div>
+
+  <script>
+    const saved = localStorage.getItem("shopfast_api");
+    if (saved) document.getElementById("apiUrl").value = saved;
+
+    function getBase() {
+      return document.getElementById("apiUrl").value.trim().replace(/\/$/, "");
+    }
+    function saveUrl() {
+      localStorage.setItem("shopfast_api", getBase());
+      consultar();
+    }
+    async function consultar() {
+      const base = getBase();
+      if (!base) return alert("Ingresa primero la URL HTTPS de API Gateway");
+      const uid = document.getElementById("uid").value.trim();
+      const url = uid ? `${base}/recommendations/${encodeURIComponent(uid)}?top_n=5` : `${base}/recommendations?top_n=5`;
+      const res = await fetch(url);
+      const data = await res.json();
+      document.getElementById("lat").innerText = `${data.latency_ms} ms`;
+      document.getElementById("src").innerText = data.source.toUpperCase();
+      document.getElementById("cnt").innerText = data.recommendations.length;
+      document.getElementById("out").innerText = JSON.stringify(data, null, 2);
+      document.getElementById("tbody").innerHTML = data.recommendations.map((r, i) => `
+        <tr>
+          <td>${i + 1}</td><td><b>${r.product_id}</b></td><td>${r.category_code || "-"}</td>
+          <td>${r.brand || "-"}</td><td>$${(r.price || 0).toFixed(2)}</td><td>${r.score}</td><td>${r.source}</td>
+        </tr>`).join("");
+    }
+    async function enviarEvento() {
+      const base = getBase();
+      if (!base) return alert("Ingresa primero la URL HTTPS de API Gateway");
+      const res = await fetch(`${base}/track-interaction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: "purchase", product_id: "1821813", user_id: document.getElementById("uid").value || "anon" })
+      });
+      document.getElementById("out").innerText = JSON.stringify(await res.json(), null, 2);
+    }
+  </script>
+</body>
+</html>
